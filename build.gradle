@@ -1,0 +1,8 @@
+// weave — real-time collaborative canvas with a hand-rolled CRDT.
+//
+// Multi-module:
+//   crdt-core/ — pure-Java, dependency-free conflict-free replicated canvas document (P0)
+//   app/       — Spring Boot 4.1 sync server: WebSocket relay + op-log + Redis fan-out (P1+)
+//
+// No plugins are applied at the root; each module is self-contained so the CRDT core
+// can be reasoned about (and property-tested) with zero framework on the classpath.

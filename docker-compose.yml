@@ -1,0 +1,36 @@
+name: weave
+
+# Infrastructure only — the app runs on the host (./gradlew :app:bootRun, port 8103) and connects
+# to these, matching the other workspace projects. The app's containerised form lives in Dockerfile.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: weave-postgres
+    environment:
+      POSTGRES_DB: weave
+      POSTGRES_USER: weave
+      POSTGRES_PASSWORD: weave
+    ports:
+      - "5437:5432"          # host 5437 (registry-allocated) -> container 5432
+    volumes:
+      - weave-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U weave -d weave"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: weave-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6383:6379"          # host 6383 (registry-allocated) -> container 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  weave-pgdata:

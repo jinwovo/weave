@@ -1,0 +1,5 @@
+rootProject.name = 'weave'
+
+include 'crdt-core'
+include 'app'
+// 'app' = Spring Boot 4.1 sync server (P1). The Next.js client lives in web/ as a separate npm project (P2).

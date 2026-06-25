@@ -1,0 +1,61 @@
+// The JSON protocol — mirrors the server's `Wire` records exactly — plus conversions to/from the
+// in-memory CanvasOp. Keeping this in one file means the wire format has a single definition.
+
+import { CanvasOp, Field, ShapeState, ShapeType, Timestamp } from './crdt';
+
+export type WTs = { l: number; c: number; actor: string };
+export type WVec = { x: number; y: number };
+export type WShape = { shapeType: string; position: WVec; size: WVec; color: string; text: string; z: string };
+export type WOp = { shapeId: string; type: 'CREATE' | 'SET' | 'DELETE'; ts: WTs; shape?: WShape; field?: string; vec?: WVec; str?: string };
+
+export type ShapeView = { id: string; shapeType: string; x: number; y: number; w: number; h: number; color: string; text: string; z: string };
+
+export type ServerMsg =
+  | { kind: 'snapshot'; shapes: ShapeView[] }
+  | { kind: 'op'; op: WOp }
+  | { kind: 'cursor'; actor: string; x: number; y: number }
+  | { kind: 'presence'; actors: string[] };
+
+export function opToWire(op: CanvasOp): WOp {
+  const ts: WTs = { l: op.ts.hlc.l, c: op.ts.hlc.c, actor: op.ts.actor };
+  if (op.kind === 'CREATE') {
+    return { shapeId: op.shapeId, type: 'CREATE', ts, shape: { shapeType: op.type, position: op.position, size: op.size, color: op.color, text: op.text, z: op.z } };
+  }
+  if (op.kind === 'DELETE') {
+    return { shapeId: op.shapeId, type: 'DELETE', ts };
+  }
+  const w: WOp = { shapeId: op.shapeId, type: 'SET', ts, field: op.field };
+  if (op.field === 'POSITION' || op.field === 'SIZE') w.vec = op.vec;
+  else w.str = op.str;
+  return w;
+}
+
+export function wireToOp(w: WOp): CanvasOp {
+  const ts: Timestamp = { hlc: { l: w.ts.l, c: w.ts.c }, actor: w.ts.actor };
+  if (w.type === 'CREATE') {
+    const s = w.shape!;
+    return { kind: 'CREATE', shapeId: w.shapeId, ts, type: s.shapeType as ShapeType, position: s.position, size: s.size, color: s.color, text: s.text, z: s.z };
+  }
+  if (w.type === 'DELETE') {
+    return { kind: 'DELETE', shapeId: w.shapeId, ts };
+  }
+  return { kind: 'SET', shapeId: w.shapeId, ts, field: w.field as Field, vec: w.vec, str: w.str };
+}
+
+// A snapshot carries flattened values, not timestamps. We seed them at the semilattice bottom
+// (ts = 0) so any real subsequent edit — local or remote — always wins. Correct because the
+// server only streams ops that are causally AFTER the snapshot, hence with higher HLCs.
+const BASE_TS: Timestamp = { hlc: { l: 0, c: 0 }, actor: '' };
+
+export function viewToState(v: ShapeView): ShapeState {
+  return {
+    id: v.id,
+    type: { value: v.shapeType as ShapeType, ts: BASE_TS },
+    position: { value: { x: v.x, y: v.y }, ts: BASE_TS },
+    size: { value: { x: v.w, y: v.h }, ts: BASE_TS },
+    color: v.color != null ? { value: v.color, ts: BASE_TS } : undefined,
+    text: v.text != null ? { value: v.text, ts: BASE_TS } : undefined,
+    z: v.z != null ? { value: v.z, ts: BASE_TS } : undefined,
+    deleted: { value: false, ts: BASE_TS },
+  };
+}

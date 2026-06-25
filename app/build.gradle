@@ -1,0 +1,62 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '4.1.0'
+	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.portfolio'
+version = '0.0.1-SNAPSHOT'
+description = 'weave app — WebSocket sync server: dumb relay + append-only op-log (Postgres) + Redis fan-out around the crdt-core convergent canvas'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// --- the convergence engine (P0) ---
+	implementation project(':crdt-core')
+
+	// --- web / websocket transport ---
+	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-websocket'
+	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// --- persistence: append-only op-log (PostgreSQL + Flyway-owned schema) ---
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.boot:spring-boot-starter-flyway'
+	implementation 'org.flywaydb:flyway-database-postgresql'
+	runtimeOnly 'org.postgresql:postgresql'
+
+	// --- cross-instance op fan-out (Redis pub/sub) ---
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+	// --- observability (Micrometer + /actuator/prometheus) ---
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+	// --- test: full context + Testcontainers (Postgres + Redis) drive the convergence proof ---
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
+	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Boot plugin: keep only the runnable bootJar (no extra -plain.jar) so the Dockerfile COPY is unambiguous.
+tasks.named('jar') {
+	enabled = false
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+}

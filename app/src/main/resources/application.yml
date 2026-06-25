@@ -1,0 +1,29 @@
+server:
+  port: 8103
+
+spring:
+  application:
+    name: weave
+  datasource:
+    url: jdbc:postgresql://localhost:5437/weave
+    username: weave
+    password: weave
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: localhost
+      port: 6383
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always

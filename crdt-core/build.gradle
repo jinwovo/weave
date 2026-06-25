@@ -1,0 +1,42 @@
+plugins {
+	id 'java'
+}
+
+group = 'com.portfolio'
+version = '0.0.1-SNAPSHOT'
+description = 'weave crdt-core — pure-Java conflict-free replicated canvas document (LWW-Map of per-field registers over Hybrid Logical Clocks)'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	// Pure-Java module: NO production dependencies on purpose — the convergence guarantee
+	// must hold for the data structure itself, not for any framework wiring around it.
+
+	// --- test: jqwik drives the property-based convergence proofs; JUnit 5 for plain unit tests ---
+	testImplementation 'net.jqwik:jqwik:1.9.1'
+	testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'
+	testImplementation 'org.assertj:assertj-core:3.26.3'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.11.4'
+}
+
+tasks.named('test') {
+	useJUnitPlatform {
+		includeEngines 'jqwik', 'junit-jupiter'
+	}
+	testLogging {
+		events 'passed', 'skipped', 'failed'
+		showStandardStreams = false
+	}
+}
