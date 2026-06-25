@@ -54,14 +54,65 @@ preserved under its own room id and remains browsable.
 See [`docs/adr/0001-lww-map-crdt-over-hlc.md`](docs/adr/0001-lww-map-crdt-over-hlc.md) for the
 decision and the alternatives (OT, RGA/YATA, OR-Set, off-the-shelf Yjs) that were rejected.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph CA["client A · browser"]
+        DA["CanvasDoc + HlcClock<br/>optimistic · offline outbox"]
+    end
+    subgraph CB["client B · browser"]
+        DB["CanvasDoc + HlcClock<br/>optimistic · offline outbox"]
+    end
+
+    subgraph APP["weave app · Spring Boot 4.1"]
+        WS["WebSocket relay"]
+        HTTP["HTTP API<br/>/history · /epochs"]
+    end
+
+    R[("Redis Pub/Sub<br/>ops · cursors fan-out")]
+    PG[("PostgreSQL<br/>append-only op-log")]
+
+    DA <-->|ops| WS
+    DB <-->|ops| WS
+    WS -->|persist| PG
+    WS -->|publish| R
+    R -->|fan-out| WS
+    HTTP -->|replay| PG
+    DA -. "time-travel · reconnect" .-> HTTP
+    DB -. "time-travel · reconnect" .-> HTTP
 ```
-┌── client A ──┐                  ┌──────── app ────────┐                  ┌── client B ──┐
-│ CanvasDoc    │ ──── ops ──────▶ │ WebSocket relay     │ ──── ops ──────▶ │ CanvasDoc    │
-│ HlcClock     │ ◀──── ops ────── │ op-log (Postgres)   │ ◀──── ops ────── │ HlcClock     │
-│ optimistic   │                  │ fan-out (Redis)     │                  │ optimistic   │
-│ + offline    │ ◀─ history/HTTP ─│ snapshot · replay   │─ history/HTTP ─▶ │ + offline    │
-└──────────────┘                  └─────────────────────┘                  └──────────────┘
-        └──────────────── merge() converges every replica to one state ────────────────┘
+
+A client applies each op to its local `CanvasDoc` **immediately** (optimistic), then sends it over the
+WebSocket. The relay **persists it to the append-only op-log** and **publishes it to Redis**; the Redis
+echo is the *single* broadcast path, so every instance — the origin included — relays an op to its own
+sockets. A late joiner gets a snapshot; **time-travel** and the **hourly archive** read that same op-log
+over HTTP. The server stores and fans out — it never decides the state; the CRDT does.
+
+### Offline → reconnect → reconverge
+
+The op-log + CRDT make a dropped connection a non-event: keep editing, reconnect, and the diverged
+boards merge by themselves.
+
+```mermaid
+sequenceDiagram
+    participant A as client A
+    participant S as weave app
+    participant L as op-log (Postgres)
+    participant B as client B
+
+    Note over A: 🔌 offline
+    A->>A: edit locally (optimistic) + queue in outbox
+    B->>S: edit (online)
+    S->>L: append op
+
+    Note over A: 🌐 reconnect
+    A->>S: flush outbox
+    S->>L: append (idempotent · room, actor, hlc)
+    A->>S: GET /history
+    S-->>A: full op-log
+    A->>A: merge — LWW by HLC
+    Note over A,B: converged — identical board
 ```
 
 ## Verification
