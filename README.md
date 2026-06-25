@@ -10,6 +10,8 @@
 replicated data type underneath that makes concurrent edits provably agree, and the event-sourced
 op-log that turns "every change ever" into time-travel.
 
+![Two clients in the same room — shapes and a live cursor converging in real time](docs/demo/weave.gif)
+
 ---
 
 ## Why it's different
@@ -170,7 +172,7 @@ front **3009**. Container prefix `weave-`.
 | **P2** | Next.js + Canvas client: shapes, pen, sticky text, images, resize, eraser, live cursors, presence | ✅ done |
 | **P3** | Distinctive layer: **time-travel** replay · **offline → reconnect reconvergence** · **hourly board + archive** | ✅ done |
 | **P4** | Multi-instance convergence (two app instances share Postgres + Redis) + k6 fan-out-latency load test | ✅ done |
-| P5 | Playwright demo GIF + product polish (PNG export, share links) | next |
+| **P5** | Playwright two-client demo GIF + product polish (PNG export, copy-link) | ✅ done |
 
 ## Quickstart
 

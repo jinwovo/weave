@@ -300,6 +300,7 @@ export default function Board({ room }: { room: string }) {
   const [travel, setTravel] = useState<Travel | null>(null);
   const [offline, setOffline] = useState(false);
   const [archive, setArchive] = useState<{ epoch: number; count: number }[] | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
@@ -583,6 +584,52 @@ export default function Board({ room }: { room: string }) {
     else { c.goOffline(); setOffline(true); }
   };
 
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard blocked */
+    }
+  };
+
+  // Render just the live shapes (no grid / cursors / UI chrome) to an offscreen canvas and download.
+  const exportPng = () => {
+    const client = clientRef.current;
+    if (!client) return;
+    const shapes = client.doc.live();
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const s of shapes) {
+      const p = s.position?.value;
+      const z = s.size?.value;
+      if (!p || !z) continue;
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x + z.x);
+      maxY = Math.max(maxY, p.y + z.y);
+    }
+    if (!isFinite(minX)) return;
+    const pad = 48;
+    const w = Math.ceil(maxX - minX + pad * 2);
+    const h = Math.ceil(maxY - minY + pad * 2);
+    const dpr = 2;
+    const off = document.createElement('canvas');
+    off.width = w * dpr;
+    off.height = h * dpr;
+    const ctx = off.getContext('2d');
+    if (!ctx) return;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#0f1115';
+    ctx.fillRect(0, 0, w, h);
+    ctx.translate(pad - minX, pad - minY);
+    for (const s of shapes) drawShape(ctx, s, false);
+    const a = document.createElement('a');
+    a.href = off.toDataURL('image/png');
+    a.download = `weave-${room}.png`;
+    a.click();
+  };
+
   // --- time travel ---
   const rebuildTravel = (ops: WOp[], index: number) => {
     const doc = new CanvasDoc();
@@ -702,6 +749,7 @@ export default function Board({ room }: { room: string }) {
       </div>
 
       {offline && <div className="offline-banner">⚡ OFFLINE — your edits are local · go online to merge them back</div>}
+      {copied && <div className="toast">link copied ✓</div>}
 
       {!travel && (
         <div className="toolbar">
@@ -734,6 +782,12 @@ export default function Board({ room }: { room: string }) {
           </button>
           <button className="tool" title="archive — past hours" onClick={openArchive}>
             📚
+          </button>
+          <button className="tool" title="export PNG" onClick={exportPng}>
+            📷
+          </button>
+          <button className="tool" title="copy room link" onClick={copyLink}>
+            🔗
           </button>
         </div>
       )}

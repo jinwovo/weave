@@ -1,0 +1,11 @@
+{
+  "name": "weave-demo-capture",
+  "private": true,
+  "type": "module",
+  "description": "Playwright capture of the two-client multiplayer demo, encoded to a GIF with gifenc (no ffmpeg).",
+  "devDependencies": {
+    "gifenc": "^1.0.3",
+    "playwright": "^1.61.0",
+    "pngjs": "^7.0.0"
+  }
+}
