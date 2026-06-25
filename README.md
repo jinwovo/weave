@@ -58,6 +58,12 @@ preserved under its own room id and remains browsable.
 See [`docs/adr/0001-lww-map-crdt-over-hlc.md`](docs/adr/0001-lww-map-crdt-over-hlc.md) for the
 decision and the alternatives (OT, RGA/YATA, OR-Set, off-the-shelf Yjs) that were rejected.
 
+LWW is the right call for geometry and style, but **text** has to merge character-by-character — so
+text content is a **sequence CRDT (RGA)** of its own (`crdt-core/RgaText`): every character is an
+element with a unique HLC id, concurrent inserts order deterministically, deletes are tombstones, and
+ops buffer until their dependency arrives so it converges in any order. See
+[`docs/adr/0002-rga-sequence-crdt.md`](docs/adr/0002-rga-sequence-crdt.md).
+
 ## Architecture
 
 ```mermaid
@@ -127,10 +133,15 @@ The convergence guarantee is enforced by **property-based tests** (`jqwik`), not
 - **partition → gossip → convergence** — replicas that each saw only a slice of the edits all
   reconcile to the identical board after exchanging state;
 - **semilattice laws** — `merge` is commutative, associative and idempotent;
-- **HLC algorithm** — monotonic ticks, counter reset on physical progress, receive-side advance.
+- **HLC algorithm** — monotonic ticks, counter reset on physical progress, receive-side advance;
+- **sequence CRDT (RGA)** — concurrently-authored text ops, delivered in every order with duplicates,
+  converge to one string (character-level, not LWW);
+- **deterministic fault-injection simulation** — a Jepsen-lite / DST harness: 3–4 replicas under an
+  adversarial network (delay, reorder, drop-and-redeliver, duplicate) converge across **400 seeds**,
+  every run reproducible from its seed.
 
 ```bash
-./gradlew :crdt-core:test     # 13 tests
+./gradlew :crdt-core:test     # 18 tests
 ```
 
 The **sync server** is proven end-to-end against real Postgres + Redis (Testcontainers): ops
