@@ -135,7 +135,17 @@ duplicate is absorbed by the `(room, actor, hlc)` constraint), and a late-joinin
 to the identical board **from the snapshot alone** — purely by replaying the op-log through the CRDT.
 
 ```bash
-./gradlew :app:test           # 6 tests (Testcontainers PG + Redis)
+./gradlew :app:test           # 7 tests (Testcontainers PG + Redis)
+```
+
+**Multi-instance convergence** is proven by `MultiInstanceConvergenceTest`, which boots **two app
+contexts** sharing one Postgres + Redis and asserts an op authored on instance 1 reaches a client on
+instance 2 — only possible via the Redis fan-out. A k6 load test ([`load/convergence.js`](load/convergence.js))
+across a 2-instance cluster measured op fan-out latency at **median 16 ms · p90 70 ms** for ~100 ops/s
+(77k messages fanned out, p99 ≈ 550 ms tail on a cold local run).
+
+```bash
+k6 run load/convergence.js    # against two instances on :8103 and :8104
 ```
 
 ## Stack
@@ -159,8 +169,8 @@ front **3009**. Container prefix `weave-`.
 | **P1** | Spring Boot 4.1 sync server: WebSocket relay, idempotent op-log, Redis fan-out, snapshot replay | ✅ done |
 | **P2** | Next.js + Canvas client: shapes, pen, sticky text, images, resize, eraser, live cursors, presence | ✅ done |
 | **P3** | Distinctive layer: **time-travel** replay · **offline → reconnect reconvergence** · **hourly board + archive** | ✅ done |
-| P4 | Multi-instance (k3d) convergence across servers + k6 convergence-latency load test | next |
-| P5 | Playwright demo GIF + product polish (PNG export, share links) | |
+| **P4** | Multi-instance convergence (two app instances share Postgres + Redis) + k6 fan-out-latency load test | ✅ done |
+| P5 | Playwright demo GIF + product polish (PNG export, share links) | next |
 
 ## Quickstart
 
