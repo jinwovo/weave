@@ -1,5 +1,7 @@
 # weave
 
+[![ci](https://github.com/jinwovo/weave/actions/workflows/ci.yml/badge.svg)](https://github.com/jinwovo/weave/actions/workflows/ci.yml)
+
 > Real-time multiplayer canvas with a **hand-rolled CRDT**. Open the same room in two tabs and
 > watch shapes, freehand ink, images and live cursors merge **conflict-free, with no server-side
 > lock**. Go **offline**, keep drawing, reconnect — the two diverged boards snap back to the *same
