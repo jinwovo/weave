@@ -7,6 +7,9 @@ import com.portfolio.weave.persistence.CanvasOpRepository;
 import com.portfolio.weave.persistence.TextOpEntity;
 import com.portfolio.weave.persistence.TextOpRepository;
 import com.portfolio.weave.web.Wire;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
@@ -40,17 +43,23 @@ public class CanvasService {
 	private final ObjectMapper mapper;
 	private final RedisOpBus bus;
 	private final RoomRegistry registry;
+	private final Counter opsIngested;
+	private final Counter textOpsIngested;
+	private final Timer ingestTimer;
 
 	private final Map<String, AtomicReference<CanvasDoc>> docs = new ConcurrentHashMap<>();
 
 	public CanvasService(CanvasOpRepository repo, TextOpRepository textRepo, OpCodec codec, ObjectMapper mapper,
-	                     RedisOpBus bus, RoomRegistry registry) {
+	                     RedisOpBus bus, RoomRegistry registry, MeterRegistry meters) {
 		this.repo = repo;
 		this.textRepo = textRepo;
 		this.codec = codec;
 		this.mapper = mapper;
 		this.bus = bus;
 		this.registry = registry;
+		this.opsIngested = Counter.builder("weave.ops.ingested").description("canvas ops persisted").register(meters);
+		this.textOpsIngested = Counter.builder("weave.text.ops.ingested").description("text ops persisted").register(meters);
+		this.ingestTimer = Timer.builder("weave.ingest").description("op persist latency").register(meters);
 	}
 
 	/** The full converged board for a joining client, shapes ordered by their z register. */
@@ -65,7 +74,8 @@ public class CanvasService {
 	/** A local client authored an op: persist it idempotently, then fan it out (only if it was new). */
 	public void ingest(String room, Wire.Op dto) {
 		CanvasOp op = codec.fromDto(dto);
-		if (persist(room, op)) {
+		if (ingestTimer.record(() -> persist(room, op))) {
+			opsIngested.increment();
 			bus.publishOp(room, mapper.writeValueAsString(new Wire.OpBroadcast("op", dto)));
 		}
 	}
@@ -87,7 +97,8 @@ public class CanvasService {
 
 	/** A local client authored an RGA text op on a shape body: persist idempotently, then fan out if new. */
 	public void ingestText(String room, UUID shapeId, Wire.TextOp op) {
-		if (persistText(room, shapeId, op)) {
+		if (ingestTimer.record(() -> persistText(room, shapeId, op))) {
+			textOpsIngested.increment();
 			bus.publishText(room, mapper.writeValueAsString(new Wire.TextBroadcast("text", shapeId, op)));
 		}
 	}

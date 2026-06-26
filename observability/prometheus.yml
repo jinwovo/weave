@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # the weave app runs on the host (bootRun / java -jar :8103); Prometheus scrapes it across the
+  # container boundary via host.docker.internal (compose maps it with extra_hosts: host-gateway).
+  - job_name: weave
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['host.docker.internal:8103']

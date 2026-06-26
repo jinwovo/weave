@@ -176,9 +176,14 @@ k6 run load/convergence.js    # against two instances on :8103 and :8104
   resize, eraser, live cursors, presence. A faithful **TypeScript port of the CRDT** gives
   local-first optimistic edits that converge with the server and every client — including **offline**
   edits that flush + reconcile on reconnect. Plus **time-travel** replay and the **hourly archive**.
+- **observability** — Micrometer metrics on `/actuator/prometheus`, scraped by Prometheus into a
+  provisioned **Grafana** dashboard: active sessions/rooms, op ingest rate + persist latency
+  (p50/p95/p99 via histogram buckets), HTTP p95 per route, JVM heap.
+
+![Grafana dashboard under k6 load — 24 live sessions, op ingest rate and persist latency](docs/demo/weave-grafana.png)
 
 Local ports (per workspace registry): app **8103**, PostgreSQL **5437**, Redis **6383**,
-front **3009**. Container prefix `weave-`.
+front **3009**, Prometheus **9099**, Grafana **3011**. Container prefix `weave-`.
 
 ## Roadmap
 

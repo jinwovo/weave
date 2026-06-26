@@ -1,5 +1,7 @@
 package com.portfolio.weave.canvas;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +26,13 @@ public class RoomRegistry {
 
 	private final Map<String, SessionInfo> byId = new ConcurrentHashMap<>();
 	private final Map<String, Set<String>> roomToIds = new ConcurrentHashMap<>();
+
+	public RoomRegistry(MeterRegistry meters) {
+		Gauge.builder("weave.sessions.active", byId, Map::size)
+				.description("live WebSocket sessions on this instance").register(meters);
+		Gauge.builder("weave.rooms.active", roomToIds, Map::size)
+				.description("rooms with at least one connected session").register(meters);
+	}
 
 	/** Register a freshly-connected session and return the thread-safe handle to send through. */
 	public WebSocketSession add(String room, String actor, WebSocketSession raw) {

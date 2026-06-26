@@ -32,5 +32,32 @@ services:
       timeout: 3s
       retries: 10
 
+  # --- observability (scrapes the host app on :8103; dashboard provisioned, anonymous read) ---
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: weave-prometheus
+    ports:
+      - "9099:9090"          # host 9099 (registry-allocated; 9098 is raft's) -> container 9090
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: weave-grafana
+    ports:
+      - "3011:3000"          # host 3011 (registry-allocated; 3008 is raft's) -> container 3000
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    depends_on:
+      - prometheus
+
 volumes:
   weave-pgdata:

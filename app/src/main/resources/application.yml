@@ -27,3 +27,11 @@ management:
   endpoint:
     health:
       show-details: always
+  metrics:
+    tags:
+      application: weave
+    distribution:
+      # publish histogram buckets so Grafana can compute p95/p99 with histogram_quantile
+      percentiles-histogram:
+        http.server.requests: true
+        weave.ingest: true
