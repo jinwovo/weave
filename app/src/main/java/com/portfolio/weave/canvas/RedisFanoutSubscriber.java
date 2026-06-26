@@ -31,6 +31,8 @@ public class RedisFanoutSubscriber implements MessageListener {
 			canvas.onRemoteOp(channel.substring(RedisOpBus.OPS_PREFIX.length()), body);
 		} else if (channel.startsWith(RedisOpBus.CURSOR_PREFIX)) {
 			registry.broadcast(channel.substring(RedisOpBus.CURSOR_PREFIX.length()), body);
+		} else if (channel.startsWith(RedisOpBus.TEXT_PREFIX)) {
+			canvas.onRemoteText(channel.substring(RedisOpBus.TEXT_PREFIX.length()), body);
 		}
 	}
 }

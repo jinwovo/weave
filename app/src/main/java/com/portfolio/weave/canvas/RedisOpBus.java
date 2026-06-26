@@ -13,6 +13,7 @@ public class RedisOpBus {
 
 	static final String OPS_PREFIX = "weave.ops.";
 	static final String CURSOR_PREFIX = "weave.cursor.";
+	static final String TEXT_PREFIX = "weave.text.";
 
 	private final StringRedisTemplate redis;
 
@@ -26,5 +27,9 @@ public class RedisOpBus {
 
 	public void publishCursor(String room, String json) {
 		redis.convertAndSend(CURSOR_PREFIX + room, json);
+	}
+
+	public void publishText(String room, String json) {
+		redis.convertAndSend(TEXT_PREFIX + room, json);
 	}
 }

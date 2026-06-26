@@ -4,10 +4,14 @@ import com.portfolio.weave.crdt.CanvasDoc;
 import com.portfolio.weave.crdt.CanvasOp;
 import com.portfolio.weave.persistence.CanvasOpEntity;
 import com.portfolio.weave.persistence.CanvasOpRepository;
+import com.portfolio.weave.persistence.TextOpEntity;
+import com.portfolio.weave.persistence.TextOpRepository;
 import com.portfolio.weave.web.Wire;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -31,6 +35,7 @@ import tools.jackson.databind.ObjectMapper;
 public class CanvasService {
 
 	private final CanvasOpRepository repo;
+	private final TextOpRepository textRepo;
 	private final OpCodec codec;
 	private final ObjectMapper mapper;
 	private final RedisOpBus bus;
@@ -38,9 +43,10 @@ public class CanvasService {
 
 	private final Map<String, AtomicReference<CanvasDoc>> docs = new ConcurrentHashMap<>();
 
-	public CanvasService(CanvasOpRepository repo, OpCodec codec, ObjectMapper mapper,
+	public CanvasService(CanvasOpRepository repo, TextOpRepository textRepo, OpCodec codec, ObjectMapper mapper,
 	                     RedisOpBus bus, RoomRegistry registry) {
 		this.repo = repo;
+		this.textRepo = textRepo;
 		this.codec = codec;
 		this.mapper = mapper;
 		this.bus = bus;
@@ -79,7 +85,41 @@ public class CanvasService {
 		bus.publishCursor(room, mapper.writeValueAsString(new Wire.Cursor("cursor", actor, x, y)));
 	}
 
+	/** A local client authored an RGA text op on a shape body: persist idempotently, then fan out if new. */
+	public void ingestText(String room, UUID shapeId, Wire.TextOp op) {
+		if (persistText(room, shapeId, op)) {
+			bus.publishText(room, mapper.writeValueAsString(new Wire.TextBroadcast("text", shapeId, op)));
+		}
+	}
+
+	/** A text op arrived over Redis: relay it to local sockets. RGA convergence runs on the clients. */
+	public void onRemoteText(String room, String body) {
+		registry.broadcast(room, body);
+	}
+
 	// --- internals ---
+
+	private boolean persistText(String room, UUID shapeId, Wire.TextOp op) {
+		TextOpEntity e = new TextOpEntity();
+		e.setId(UUID.randomUUID());
+		e.setRoomId(room);
+		e.setShapeId(shapeId);
+		e.setOpType(op.type());
+		e.setOpKey(keyOf(op));
+		e.setPayload(mapper.writeValueAsString(op));
+		e.setCreatedAt(Instant.now());
+		try {
+			textRepo.saveAndFlush(e);
+			return true;
+		} catch (DataIntegrityViolationException duplicate) {
+			return false; // same element insert / target delete already stored — idempotent
+		}
+	}
+
+	private static String keyOf(Wire.TextOp op) {
+		Wire.Ts t = "INSERT".equals(op.type()) ? op.id() : op.target();
+		return t.l() + ":" + t.c() + ":" + t.actor();
+	}
 
 	private boolean persist(String room, CanvasOp op) {
 		try {

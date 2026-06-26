@@ -22,7 +22,7 @@ public class RedisConfig {
 		RedisMessageListenerContainer container = new RedisMessageListenerContainer();
 		container.setConnectionFactory(connectionFactory);
 		container.addMessageListener(subscriber,
-				List.of(new PatternTopic("weave.ops.*"), new PatternTopic("weave.cursor.*")));
+				List.of(new PatternTopic("weave.ops.*"), new PatternTopic("weave.cursor.*"), new PatternTopic("weave.text.*")));
 		return container;
 	}
 }

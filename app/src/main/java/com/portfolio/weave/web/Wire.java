@@ -35,8 +35,17 @@ public final class Wire {
 	public record Op(UUID shapeId, String type, Ts ts, Shape shape, String field, Vec vec, String str) {
 	}
 
-	/** Client → server envelope. */
-	public record Inbound(String kind, Op op, Double x, Double y) {
+	/**
+	 * One RGA text operation on a shape's body. {@code type} is INSERT/DELETE. For INSERT, {@link #id}
+	 * is the new character element, {@link #origin} the element it follows (null = start), {@link #ch}
+	 * the character; for DELETE, {@link #target} is the element to tombstone. The server relays and
+	 * persists these opaquely — the RGA convergence runs on the clients.
+	 */
+	public record TextOp(String type, Ts id, Ts origin, String ch, Ts target) {
+	}
+
+	/** Client → server envelope. Carries {@link Op} for "op", x/y for "cursor", text fields for "text". */
+	public record Inbound(String kind, Op op, Double x, Double y, UUID textShapeId, TextOp textOp) {
 	}
 
 	/** Server → client: a single op to merge into the local document. */
@@ -58,5 +67,13 @@ public final class Wire {
 
 	/** Server → client: the full current board, sent once when a client joins. */
 	public record Snapshot(String kind, List<ShapeView> shapes) {
+	}
+
+	/** Server → client: a single text op to merge into the shape's local RGA. */
+	public record TextBroadcast(String kind, UUID shapeId, TextOp op) {
+	}
+
+	/** One entry of a room's text-op history (fetched on join to rebuild the per-shape RGAs). */
+	public record TextHistoryItem(UUID shapeId, TextOp op) {
 	}
 }

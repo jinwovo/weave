@@ -141,12 +141,12 @@ class MultiInstanceConvergenceTest {
 	private TextMessage create(UUID id, String actor, long l, double x, double y, String color) {
 		Wire.Op op = new Wire.Op(id, "CREATE", new Wire.Ts(l, 0, actor),
 				new Wire.Shape("RECT", new Wire.Vec(x, y), new Wire.Vec(40, 40), color, "", "a0"), null, null, null);
-		return new TextMessage(mapper.writeValueAsString(new Wire.Inbound("op", op, null, null)));
+		return new TextMessage(mapper.writeValueAsString(new Wire.Inbound("op", op, null, null, null, null)));
 	}
 
 	private TextMessage setColor(UUID id, String actor, long l, String color) {
 		Wire.Op op = new Wire.Op(id, "SET", new Wire.Ts(l, 0, actor), null, "COLOR", null, color);
-		return new TextMessage(mapper.writeValueAsString(new Wire.Inbound("op", op, null, null)));
+		return new TextMessage(mapper.writeValueAsString(new Wire.Inbound("op", op, null, null, null, null)));
 	}
 
 	private String awaitKind(Collector collector, String kind) throws Exception {

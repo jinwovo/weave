@@ -2,6 +2,7 @@
 // in-memory CanvasOp. Keeping this in one file means the wire format has a single definition.
 
 import { CanvasOp, Field, ShapeState, ShapeType, Timestamp } from './crdt';
+import { TextOp } from './rga';
 
 export type WTs = { l: number; c: number; actor: string };
 export type WVec = { x: number; y: number };
@@ -10,11 +11,37 @@ export type WOp = { shapeId: string; type: 'CREATE' | 'SET' | 'DELETE'; ts: WTs;
 
 export type ShapeView = { id: string; shapeType: string; x: number; y: number; w: number; h: number; color: string; text: string; z: string };
 
+export type WTextOp = { type: 'INSERT' | 'DELETE'; id?: WTs; origin?: WTs | null; ch?: string; target?: WTs };
+export type WTextHistoryItem = { shapeId: string; op: WTextOp };
+
 export type ServerMsg =
   | { kind: 'snapshot'; shapes: ShapeView[] }
   | { kind: 'op'; op: WOp }
   | { kind: 'cursor'; actor: string; x: number; y: number }
-  | { kind: 'presence'; actors: string[] };
+  | { kind: 'presence'; actors: string[] }
+  | { kind: 'text'; shapeId: string; op: WTextOp };
+
+function tsToWire(ts: Timestamp): WTs {
+  return { l: ts.hlc.l, c: ts.hlc.c, actor: ts.actor };
+}
+
+function wireToTs(w: WTs): Timestamp {
+  return { hlc: { l: w.l, c: w.c }, actor: w.actor };
+}
+
+export function textOpToWire(op: TextOp): WTextOp {
+  if (op.kind === 'INSERT') {
+    return { type: 'INSERT', id: tsToWire(op.id), origin: op.originLeft ? tsToWire(op.originLeft) : null, ch: op.value };
+  }
+  return { type: 'DELETE', target: tsToWire(op.target) };
+}
+
+export function wireToTextOp(w: WTextOp): TextOp {
+  if (w.type === 'INSERT') {
+    return { kind: 'INSERT', id: wireToTs(w.id!), originLeft: w.origin ? wireToTs(w.origin) : null, value: w.ch! };
+  }
+  return { kind: 'DELETE', target: wireToTs(w.target!) };
+}
 
 export function opToWire(op: CanvasOp): WOp {
   const ts: WTs = { l: op.ts.hlc.l, c: op.ts.hlc.c, actor: op.ts.actor };

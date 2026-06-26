@@ -4,7 +4,8 @@
 // client reconciles against the server's op-log, so the board converges — the CRDT payoff.
 
 import { CanvasDoc, CanvasOp, HlcClock, ShapeType, Timestamp, Vec2 } from './crdt';
-import { opToWire, ServerMsg, viewToState, WOp, wireToOp } from './protocol';
+import { opToWire, ServerMsg, textOpToWire, viewToState, WOp, wireToOp, wireToTextOp, WTextHistoryItem } from './protocol';
+import { RgaText, TextOp } from './rga';
 
 export type RemoteCursor = { x: number; y: number; tx: number; ty: number };
 export type Status = 'connecting' | 'open' | 'closed';
@@ -14,6 +15,8 @@ export class WeaveClient {
   cursors = new Map<string, RemoteCursor>();
   presence: string[] = [];
   status: Status = 'connecting';
+  texts = new Map<string, RgaText>(); // shapeId -> RGA body (sticky / text shapes)
+  onText: ((shapeId: string, op: TextOp) => void) | null = null;
 
   private clock = new HlcClock();
   private ws: WebSocket | null = null;
@@ -101,12 +104,19 @@ export class WeaveClient {
     switch (msg.kind) {
       case 'snapshot':
         msg.shapes.forEach((v) => this.doc.mergeState(v.id, viewToState(v)));
+        void this.loadText(); // rebuild per-shape RGAs from the text op-log
         this.onChange();
         break;
       case 'op': {
         const op = wireToOp(msg.op);
         this.clock.receive(op.ts.hlc);
         this.doc.apply(op);
+        break;
+      }
+      case 'text': {
+        const op = wireToTextOp(msg.op);
+        this.rgaFor(msg.shapeId).apply(op);
+        if (this.onText) this.onText(msg.shapeId, op);
         break;
       }
       case 'cursor': {
@@ -199,6 +209,48 @@ export class WeaveClient {
     if (now - this.lastCursorSent < 40) return;
     this.lastCursorSent = now;
     this.sendEphemeral({ kind: 'cursor', x, y });
+  }
+
+  // --- collaborative text: an RGA sequence CRDT per shape body ---
+
+  rgaFor(shapeId: string): RgaText {
+    let r = this.texts.get(shapeId);
+    if (!r) {
+      r = new RgaText();
+      this.texts.set(shapeId, r);
+    }
+    return r;
+  }
+
+  textOf(shapeId: string): string {
+    return this.texts.get(shapeId)?.value() ?? '';
+  }
+
+  textInsert(shapeId: string, visIndex: number, ch: string): void {
+    const op = this.rgaFor(shapeId).localInsert(visIndex, ch, this.stamp());
+    // server's inbound envelope uses textShapeId/textOp (op/shapeId are taken by canvas ops)
+    this.sendReliable({ kind: 'text', textShapeId: shapeId, textOp: textOpToWire(op) });
+  }
+
+  textDelete(shapeId: string, visIndex: number): void {
+    const op = this.rgaFor(shapeId).localDelete(visIndex);
+    this.sendReliable({ kind: 'text', textShapeId: shapeId, textOp: textOpToWire(op) });
+  }
+
+  private async loadText(): Promise<void> {
+    try {
+      const items = await this.fetchTextHistory();
+      for (const it of items) this.rgaFor(it.shapeId).apply(wireToTextOp(it.op));
+      this.onChange();
+    } catch {
+      /* server momentarily unreachable; live text ops still flow */
+    }
+  }
+
+  async fetchTextHistory(): Promise<WTextHistoryItem[]> {
+    const res = await fetch(`${this.httpBase()}/api/rooms/${encodeURIComponent(this.room)}/text`);
+    if (!res.ok) throw new Error(`text fetch failed: ${res.status}`);
+    return res.json();
   }
 
   private httpBase(): string {

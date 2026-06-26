@@ -61,6 +61,8 @@ public class WeaveWebSocketHandler extends TextWebSocketHandler {
 			canvas.ingest(info.room(), withActor(in.op(), info.actor()));
 		} else if ("cursor".equals(in.kind())) {
 			canvas.cursor(info.room(), info.actor(), in.x(), in.y());
+		} else if ("text".equals(in.kind()) && in.textOp() != null && in.textShapeId() != null) {
+			canvas.ingestText(info.room(), in.textShapeId(), in.textOp());
 		}
 	}
 

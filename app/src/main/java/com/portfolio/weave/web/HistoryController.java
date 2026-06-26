@@ -2,8 +2,10 @@ package com.portfolio.weave.web;
 
 import com.portfolio.weave.canvas.OpCodec;
 import com.portfolio.weave.persistence.CanvasOpRepository;
+import com.portfolio.weave.persistence.TextOpRepository;
 import java.util.Comparator;
 import java.util.List;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,17 +21,29 @@ import org.springframework.web.bind.annotation.RestController;
 public class HistoryController {
 
 	private final CanvasOpRepository repo;
+	private final TextOpRepository textRepo;
 	private final OpCodec codec;
+	private final ObjectMapper mapper;
 
-	public HistoryController(CanvasOpRepository repo, OpCodec codec) {
+	public HistoryController(CanvasOpRepository repo, TextOpRepository textRepo, OpCodec codec, ObjectMapper mapper) {
 		this.repo = repo;
+		this.textRepo = textRepo;
 		this.codec = codec;
+		this.mapper = mapper;
 	}
 
 	@GetMapping("/api/rooms/{room}/history")
 	public List<Wire.Op> history(@PathVariable String room) {
 		return repo.findByRoomIdOrderByHlcLAscHlcCAscActorIdAsc(room).stream()
 				.map((e) -> codec.toDto(codec.fromEntity(e)))
+				.toList();
+	}
+
+	/** Every RGA text op for a room — a joining client replays these into its per-shape RGAs. */
+	@GetMapping("/api/rooms/{room}/text")
+	public List<Wire.TextHistoryItem> text(@PathVariable String room) {
+		return textRepo.findByRoomIdOrderByCreatedAtAsc(room).stream()
+				.map((e) -> new Wire.TextHistoryItem(e.getShapeId(), mapper.readValue(e.getPayload(), Wire.TextOp.class)))
 				.toList();
 	}
 

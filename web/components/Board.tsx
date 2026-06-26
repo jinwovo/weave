@@ -152,7 +152,7 @@ function strokePath(ctx: CanvasRenderingContext2D, pts: Vec2[], ox: number, oy: 
   ctx.stroke();
 }
 
-function drawShape(ctx: CanvasRenderingContext2D, s: ShapeState, selected: boolean) {
+function drawShape(ctx: CanvasRenderingContext2D, s: ShapeState, selected: boolean, bodyText?: string) {
   const pos = s.position?.value;
   const sz = s.size?.value;
   const type = s.type?.value;
@@ -175,10 +175,10 @@ function drawShape(ctx: CanvasRenderingContext2D, s: ShapeState, selected: boole
     rr(ctx, pos.x, pos.y, sz.x, sz.y, 6);
     ctx.fill();
     ctx.shadowColor = 'transparent';
-    drawText(ctx, s.text?.value ?? '', pos.x + 14, pos.y + 28, sz.x - 28, '#1f2937');
+    drawText(ctx, bodyText ?? s.text?.value ?? '', pos.x + 14, pos.y + 28, sz.x - 28, '#1f2937');
   } else if (type === 'TEXT') {
     ctx.shadowColor = 'transparent';
-    drawText(ctx, s.text?.value ?? '', pos.x, pos.y + 18, sz.x, color);
+    drawText(ctx, bodyText ?? s.text?.value ?? '', pos.x, pos.y + 18, sz.x, color);
   } else if (type === 'PATH') {
     const pts = parsePath(s.text?.value);
     if (pts) {
@@ -296,7 +296,7 @@ export default function Board({ room }: { room: string }) {
   const [tool, setTool] = useState<Tool>('select');
   const [color, setColor] = useState<string>('#eab308');
   const [selected, setSelected] = useState<string | null>(null);
-  const [editing, setEditing] = useState<{ id: string; x: number; y: number; w: number; h: number; value: string; color: string } | null>(null);
+  const [editing, setEditing] = useState<{ id: string; x: number; y: number; w: number; h: number; color: string } | null>(null);
   const [travel, setTravel] = useState<Travel | null>(null);
   const [offline, setOffline] = useState(false);
   const [archive, setArchive] = useState<{ epoch: number; count: number }[] | null>(null);
@@ -312,6 +312,8 @@ export default function Board({ room }: { room: string }) {
   const erasingRef = useRef(false);
   const travelDocRef = useRef<CanvasDoc | null>(null);
   const playRef = useRef<number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const editingRef = useRef(editing); editingRef.current = editing;
 
   const toCanvas = (e: { clientX: number; clientY: number }): Vec2 => {
     const r = canvasRef.current!.getBoundingClientRect();
@@ -365,7 +367,15 @@ export default function Board({ room }: { room: string }) {
       const travelDoc = travelDocRef.current;
       const doc = travelDoc ?? client?.doc;
       if (doc) {
-        for (const s of doc.live()) drawShape(ctx, s, !travelDoc && s.id === selectedRef.current);
+        for (const s of doc.live()) {
+          const ty = s.type?.value;
+          let body: string | undefined;
+          if (!travelDoc && client && (ty === 'STICKY' || ty === 'TEXT')) {
+            const t = client.textOf(s.id);
+            if (t.length > 0) body = t;
+          }
+          drawShape(ctx, s, !travelDoc && s.id === selectedRef.current, body);
+        }
       }
       if (!travelDoc && client) {
         const d = draftRef.current;
@@ -540,7 +550,7 @@ export default function Board({ room }: { room: string }) {
       setSelected(id);
       setTool('select');
       if (d.type === 'STICKY') {
-        setEditing({ id, x, y, w, h, value: '', color: colorRef.current });
+        setEditing({ id, x, y, w, h, color: colorRef.current });
       }
     } else if (dragRef.current && client) {
       const dr = dragRef.current;
@@ -561,7 +571,7 @@ export default function Board({ room }: { room: string }) {
     const sz = s.size?.value;
     if ((type === 'STICKY' || type === 'TEXT') && pos && sz) {
       setSelected(s.id);
-      setEditing({ id: s.id, x: pos.x, y: pos.y, w: sz.x, h: sz.y, value: s.text?.value ?? '', color: s.color?.value ?? '#eab308' });
+      setEditing({ id: s.id, x: pos.x, y: pos.y, w: sz.x, h: sz.y, color: s.color?.value ?? '#eab308' });
     }
   };
 
@@ -570,12 +580,46 @@ export default function Board({ room }: { room: string }) {
     if (selected) clientRef.current?.setColor(selected, c);
   };
 
-  const commitEditing = () => {
-    if (editing) {
-      clientRef.current?.setText(editing.id, editing.value);
-      setEditing(null);
-    }
+  // Turn an editor value-change into character-level RGA ops (handles typing, delete, paste, replace).
+  const applyTextDiff = (shapeId: string, oldStr: string, newStr: string) => {
+    const client = clientRef.current;
+    if (!client) return;
+    let p = 0;
+    const min = Math.min(oldStr.length, newStr.length);
+    while (p < min && oldStr[p] === newStr[p]) p++;
+    let suf = 0;
+    while (suf < oldStr.length - p && suf < newStr.length - p
+        && oldStr[oldStr.length - 1 - suf] === newStr[newStr.length - 1 - suf]) suf++;
+    const delCount = oldStr.length - p - suf;
+    for (let k = 0; k < delCount; k++) client.textDelete(shapeId, p);
+    const ins = newStr.slice(p, newStr.length - suf);
+    for (let k = 0; k < ins.length; k++) client.textInsert(shapeId, p + k, ins[k]);
   };
+
+  // Reconcile the open editor when a remote text op lands on the shape being edited (cursor-aware).
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client) return;
+    client.onText = (shapeId, op) => {
+      const ed = editingRef.current;
+      const ta = textareaRef.current;
+      if (!ed || ed.id !== shapeId || !ta) return;
+      const newVal = client.textOf(shapeId);
+      if (ta.value === newVal) return; // our own echo or a no-op
+      let pos = ta.selectionStart ?? newVal.length;
+      const rga = client.rgaFor(shapeId);
+      if (op.kind === 'INSERT') {
+        if (rga.visibleIndexOf(op.id) <= pos) pos++;
+      } else if (rga.visibleIndexOf(op.target) < pos) {
+        pos--;
+      }
+      ta.value = newVal;
+      const np = Math.max(0, Math.min(pos, newVal.length));
+      ta.setSelectionRange(np, np);
+    };
+  });
+
+  const commitEditing = () => setEditing(null);
 
   const toggleOffline = () => {
     const c = clientRef.current;
@@ -837,18 +881,16 @@ export default function Board({ room }: { room: string }) {
 
       {editing && (
         <textarea
+          key={editing.id}
+          ref={textareaRef}
           className="sticky-editor"
           autoFocus
+          defaultValue={clientRef.current?.textOf(editing.id) ?? ''}
           style={{ left: editing.x, top: editing.y, width: editing.w, height: editing.h, background: editing.color }}
-          value={editing.value}
-          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+          onInput={(e) => applyTextDiff(editing.id, clientRef.current?.textOf(editing.id) ?? '', e.currentTarget.value)}
           onBlur={commitEditing}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') setEditing(null);
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              commitEditing();
-            }
+            if (e.key === 'Escape') e.currentTarget.blur();
           }}
         />
       )}

@@ -23,6 +23,7 @@ Every distinctive feature falls out of the **architecture**, not bolted-on UI:
 | Feature | Powered by |
 |---|---|
 | 🟢 **Multiplayer, conflict-free** — concurrent edits never clobber | the CRDT (LWW-Map over HLC) |
+| ✍️ **Collaborative text** — two people type in one note, character by character | a **sequence CRDT (RGA)**, proven by a fault-injection sim |
 | 🔌 **Offline-resilient** — keep editing while disconnected, reconnect → auto-merge | optimistic local CRDT + op outbox + reconcile |
 | 🕐 **Time-travel** — scrub / replay the board's entire history | the append-only op-log (event sourcing) |
 | 📚 **Hourly board + archive** — fresh canvas each hour, past hours browsable read-only | op-log bucketed by room `base@<hour>` |
@@ -61,8 +62,11 @@ decision and the alternatives (OT, RGA/YATA, OR-Set, off-the-shelf Yjs) that wer
 LWW is the right call for geometry and style, but **text** has to merge character-by-character — so
 text content is a **sequence CRDT (RGA)** of its own (`crdt-core/RgaText`): every character is an
 element with a unique HLC id, concurrent inserts order deterministically, deletes are tombstones, and
-ops buffer until their dependency arrives so it converges in any order. See
+ops buffer until their dependency arrives so it converges in any order. It backs sticky / text shape
+bodies live — double-click a note and two people can type into it at once. See
 [`docs/adr/0002-rga-sequence-crdt.md`](docs/adr/0002-rga-sequence-crdt.md).
+
+![Two browsers typing into the same sticky — every character survives and the editors converge to "ABABABAB"](docs/demo/weave-text.gif)
 
 ## Architecture
 
