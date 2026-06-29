@@ -24,6 +24,7 @@ Every distinctive feature falls out of the **architecture**, not bolted-on UI:
 |---|---|
 | 🟢 **Multiplayer, conflict-free** — concurrent edits never clobber | the CRDT (LWW-Map over HLC) |
 | ✍️ **Collaborative text** — two people type in one note, character by character | a **sequence CRDT (RGA)**, proven by a fault-injection sim |
+| ↶ **Undo / redo** — Ctrl+Z works *with* live collaboration, not against it | **inverse ops** re-authored with a fresh stamp (LWW always wins) |
 | 🔌 **Offline-resilient** — keep editing while disconnected, reconnect → auto-merge | optimistic local CRDT + op outbox + reconcile |
 | 🕐 **Time-travel** — scrub / replay the board's entire history | the append-only op-log (event sourcing) |
 | 📚 **Hourly board + archive** — fresh canvas each hour, past hours browsable read-only | op-log bucketed by room `base@<hour>` |
@@ -67,6 +68,16 @@ bodies live — double-click a note and two people can type into it at once. See
 [`docs/adr/0002-rga-sequence-crdt.md`](docs/adr/0002-rga-sequence-crdt.md).
 
 ![Two browsers typing into the same sticky — every character survives and the editors converge to "ABABABAB"](docs/demo/weave-text.gif)
+
+**Undo/redo** falls out of the same model. There is no "previous document" to rewind to — the log is
+append-only and shared — so each local edit records an **inverse op** (move → move-back, create →
+delete, delete → re-create) that undo re-authors with a *fresh* timestamp. Because the board is
+last-writer-wins, a fresh stamp always wins, so "undo" is just "author the reverse edit now" — which
+commutes with everyone else's concurrent edits: undo my move after you recolor the same shape and
+your color stays. Per-user stack, zero server involvement. See
+[`docs/adr/0003-inverse-op-undo.md`](docs/adr/0003-inverse-op-undo.md).
+
+![Three shapes drawn, then Ctrl+Z erases the board and redo brings every shape back to the exact pixel](docs/demo/weave-undo.gif)
 
 ## Architecture
 
@@ -173,7 +184,7 @@ k6 run load/convergence.js    # against two instances on :8103 and :8104
 - **app** — Spring Boot 4.1: WebSocket relay, idempotent op-log on PostgreSQL (Flyway), Redis pub/sub
   fan-out, snapshot replay, and HTTP `…/history` + `…/epochs` endpoints (time-travel & archive).
 - **web** — Next.js 15 + Canvas client: shapes, freehand pen, sticky text, **images** (paste/drop),
-  resize, eraser, live cursors, presence. A faithful **TypeScript port of the CRDT** gives
+  resize, eraser, **undo/redo** (Ctrl+Z), live cursors, presence. A faithful **TypeScript port of the CRDT** gives
   local-first optimistic edits that converge with the server and every client — including **offline**
   edits that flush + reconcile on reconnect. Plus **time-travel** replay and the **hourly archive**.
 - **observability** — Micrometer metrics on `/actuator/prometheus`, scraped by Prometheus into a
@@ -195,6 +206,8 @@ front **3009**, Prometheus **9099**, Grafana **3011**. Container prefix `weave-`
 | **P3** | Distinctive layer: **time-travel** replay · **offline → reconnect reconvergence** · **hourly board + archive** | ✅ done |
 | **P4** | Multi-instance convergence (two app instances share Postgres + Redis) + k6 fan-out-latency load test | ✅ done |
 | **P5** | Playwright two-client demo GIF + product polish (PNG export, copy-link) | ✅ done |
+| **P6** | Sequence CRDT (RGA) collaborative text + deterministic fault-injection sim · Prometheus + Grafana observability | ✅ done |
+| **P7** | Undo / redo via **inverse ops** — per-user, concurrency-safe, zero server change | ✅ done |
 
 ## Quickstart
 

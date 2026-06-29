@@ -108,8 +108,9 @@ html, body {
   font-size: 17px;
   transition: background 0.12s, border-color 0.12s;
 }
-.tool:hover { background: rgba(255, 255, 255, 0.06); }
+.tool:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); }
 .tool.active { background: rgba(96, 165, 250, 0.18); border-color: rgba(96, 165, 250, 0.5); }
+.tool:disabled { opacity: 0.32; cursor: default; }
 .sep { width: 1px; height: 26px; background: var(--border); margin: 0 4px; }
 
 .swatches { display: flex; gap: 5px; align-items: center; }

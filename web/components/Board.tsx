@@ -402,11 +402,23 @@ export default function Board({ room }: { room: string }) {
     };
   }, [clientRef]);
 
-  // --- keyboard: delete selected ---
+  // --- keyboard: undo/redo + delete selected ---
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const tag = (document.activeElement?.tagName ?? '').toLowerCase();
-      if (tag === 'textarea' || tag === 'input') return;
+      if (tag === 'textarea' || tag === 'input') return; // let the sticky editor keep native undo
+      const meta = e.ctrlKey || e.metaKey;
+      if (meta && (e.key === 'z' || e.key === 'Z')) {
+        e.preventDefault();
+        if (travelDocRef.current) return;
+        if (e.shiftKey) clientRef.current?.redo(); else clientRef.current?.undo();
+        return;
+      }
+      if (meta && (e.key === 'y' || e.key === 'Y')) {
+        e.preventDefault();
+        if (!travelDocRef.current) clientRef.current?.redo();
+        return;
+      }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !travelDocRef.current) {
         clientRef.current?.remove(selected);
         setSelected(null);
@@ -808,6 +820,23 @@ export default function Board({ room }: { room: string }) {
               <div key={c} className={`swatch ${color === c ? 'active' : ''}`} style={{ background: c }} onClick={() => pickColor(c)} />
             ))}
           </div>
+          <div className="sep" />
+          <button
+            className="tool"
+            title="undo (Ctrl/⌘+Z)"
+            disabled={!clientRef.current?.canUndo()}
+            onClick={() => clientRef.current?.undo()}
+          >
+            ↶
+          </button>
+          <button
+            className="tool"
+            title="redo (Ctrl/⌘+Shift+Z)"
+            disabled={!clientRef.current?.canRedo()}
+            onClick={() => clientRef.current?.redo()}
+          >
+            ↷
+          </button>
           <div className="sep" />
           <button
             className="tool"
