@@ -134,6 +134,13 @@ html, body {
   z-index: 10;
 }
 
+/* On phones the centered toolbar spans the width and the bottom-right hint overlaps it.
+   Hide the verbose hint and let the toolbar wrap instead of colliding. */
+@media (max-width: 640px) {
+  .hint { display: none; }
+  .toolbar { max-width: calc(100vw - 24px); flex-wrap: wrap; justify-content: center; }
+}
+
 /* --- inline text editor for stickies --- */
 .sticky-editor {
   position: fixed;
