@@ -44,8 +44,20 @@ public final class Wire {
 	public record TextOp(String type, Ts id, Ts origin, String ch, Ts target) {
 	}
 
-	/** Client → server envelope. Carries {@link Op} for "op", x/y for "cursor", text fields for "text". */
-	public record Inbound(String kind, Op op, Double x, Double y, UUID textShapeId, TextOp textOp) {
+	/**
+	 * An in-progress, ephemeral draft — a shape being drawn before it is committed. For RECT/ELLIPSE/
+	 * STICKY {@link #a}/{@link #b} are the drag corners; for PEN {@link #pts} is the stroke so far.
+	 * A {@code null} {@link #tool} clears the actor's draft (they finished or cancelled).
+	 */
+	public record DraftIn(String tool, Vec a, Vec b, List<Vec> pts, String color) {
+	}
+
+	/** Client → server envelope. Carries {@link Op} for "op", x/y for "cursor", text fields for "text", a {@link DraftIn} for "draft". */
+	public record Inbound(String kind, Op op, Double x, Double y, UUID textShapeId, TextOp textOp, DraftIn draft) {
+	}
+
+	/** Server → client: someone's in-progress draft preview (ephemeral, never persisted; {@code tool == null} clears it). */
+	public record DraftBroadcast(String kind, String actor, String tool, Vec a, Vec b, List<Vec> pts, String color) {
 	}
 
 	/** Server → client: a single op to merge into the local document. */

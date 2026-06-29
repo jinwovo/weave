@@ -14,12 +14,17 @@ export type ShapeView = { id: string; shapeType: string; x: number; y: number; w
 export type WTextOp = { type: 'INSERT' | 'DELETE'; id?: WTs; origin?: WTs | null; ch?: string; target?: WTs };
 export type WTextHistoryItem = { shapeId: string; op: WTextOp };
 
+// An in-progress draft someone else is drawing (ephemeral, fanned out on the cursor channel).
+// tool null = clear it; RECT/ELLIPSE/STICKY use a/b corners, PEN uses pts.
+export type WDraft = { tool: string | null; a?: WVec | null; b?: WVec | null; pts?: WVec[] | null; color?: string | null };
+
 export type ServerMsg =
   | { kind: 'snapshot'; shapes: ShapeView[] }
   | { kind: 'op'; op: WOp }
   | { kind: 'cursor'; actor: string; x: number; y: number }
   | { kind: 'presence'; actors: string[] }
-  | { kind: 'text'; shapeId: string; op: WTextOp };
+  | { kind: 'text'; shapeId: string; op: WTextOp }
+  | ({ kind: 'draft'; actor: string } & WDraft);
 
 function tsToWire(ts: Timestamp): WTs {
   return { l: ts.hlc.l, c: ts.hlc.c, actor: ts.actor };

@@ -8,6 +8,8 @@ import { opToWire, ServerMsg, textOpToWire, viewToState, WOp, wireToOp, wireToTe
 import { RgaText, TextOp } from './rga';
 
 export type RemoteCursor = { x: number; y: number; tx: number; ty: number };
+// A peer's in-progress draft (what they're drawing right now), rendered as a translucent preview.
+export type RemoteDraft = { tool: string; a?: Vec2; b?: Vec2; pts?: Vec2[]; color: string };
 export type Status = 'connecting' | 'open' | 'closed';
 
 // Undo/redo is built on the CRDT itself: an op carries no implicit "previous" — so for every local
@@ -28,6 +30,7 @@ const MAX_HISTORY = 200;
 export class WeaveClient {
   doc = new CanvasDoc();
   cursors = new Map<string, RemoteCursor>();
+  drafts = new Map<string, RemoteDraft>(); // actor -> the shape they're currently drawing
   presence: string[] = [];
   status: Status = 'connecting';
   texts = new Map<string, RgaText>(); // shapeId -> RGA body (sticky / text shapes)
@@ -36,6 +39,7 @@ export class WeaveClient {
   private clock = new HlcClock();
   private ws: WebSocket | null = null;
   private lastCursorSent = 0;
+  private lastDraftSent = 0;
   private lastMoveSent = 0;
   private closedByUs = false;
   private offline = false;
@@ -146,9 +150,22 @@ export class WeaveClient {
         else this.cursors.set(msg.actor, { x: msg.x, y: msg.y, tx: msg.x, ty: msg.y });
         break;
       }
+      case 'draft': {
+        if (msg.actor === this.actor) break;
+        if (!msg.tool) { this.drafts.delete(msg.actor); break; } // they committed or cancelled
+        this.drafts.set(msg.actor, {
+          tool: msg.tool,
+          a: msg.a ?? undefined,
+          b: msg.b ?? undefined,
+          pts: msg.pts ?? undefined,
+          color: msg.color ?? '#94a3b8',
+        });
+        break;
+      }
       case 'presence':
         this.presence = msg.actors;
         for (const a of [...this.cursors.keys()]) if (!msg.actors.includes(a)) this.cursors.delete(a);
+        for (const a of [...this.drafts.keys()]) if (!msg.actors.includes(a)) this.drafts.delete(a);
         this.onChange();
         break;
     }
@@ -306,6 +323,31 @@ export class WeaveClient {
     if (now - this.lastCursorSent < 40) return;
     this.lastCursorSent = now;
     this.sendEphemeral({ kind: 'cursor', x, y });
+  }
+
+  // --- live draft preview: broadcast the shape being drawn so peers see it form (ephemeral) ---
+
+  /** A RECT/ELLIPSE/STICKY being dragged out, from corner a to corner b. Throttled like cursors. */
+  draftShape(tool: string, a: Vec2, b: Vec2, color: string): void {
+    const now = Date.now();
+    if (now - this.lastDraftSent < 45) return;
+    this.lastDraftSent = now;
+    this.sendEphemeral({ kind: 'draft', tool, a, b, color });
+  }
+
+  /** A freehand stroke in progress; downsample to keep the ephemeral frame small. */
+  draftPen(pts: Vec2[], color: string): void {
+    const now = Date.now();
+    if (now - this.lastDraftSent < 45) return;
+    this.lastDraftSent = now;
+    const step = pts.length > 120 ? Math.ceil(pts.length / 120) : 1;
+    const thin = step === 1 ? pts : pts.filter((_, i) => i % step === 0 || i === pts.length - 1);
+    this.sendEphemeral({ kind: 'draft', tool: 'PEN', pts: thin, color });
+  }
+
+  /** Tell peers to drop our preview — sent once when a draw commits or is cancelled (never throttled). */
+  clearDraft(): void {
+    this.sendEphemeral({ kind: 'draft', tool: null });
   }
 
   // --- collaborative text: an RGA sequence CRDT per shape body ---

@@ -95,6 +95,18 @@ public class CanvasService {
 		bus.publishCursor(room, mapper.writeValueAsString(new Wire.Cursor("cursor", actor, x, y)));
 	}
 
+	/**
+	 * An ephemeral draft preview (a shape mid-draw). Fanned out on the cursor channel — like a cursor
+	 * it is never persisted nor applied to the doc; it just lets peers see what someone is drawing. A
+	 * null draft (tool == null) tells peers to clear that actor's preview.
+	 */
+	public void draft(String room, String actor, Wire.DraftIn d) {
+		Wire.DraftBroadcast msg = new Wire.DraftBroadcast("draft", actor,
+				d == null ? null : d.tool(), d == null ? null : d.a(), d == null ? null : d.b(),
+				d == null ? null : d.pts(), d == null ? null : d.color());
+		bus.publishCursor(room, mapper.writeValueAsString(msg));
+	}
+
 	/** A local client authored an RGA text op on a shape body: persist idempotently, then fan out if new. */
 	public void ingestText(String room, UUID shapeId, Wire.TextOp op) {
 		if (ingestTimer.record(() -> persistText(room, shapeId, op))) {

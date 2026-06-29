@@ -25,6 +25,7 @@ Every distinctive feature falls out of the **architecture**, not bolted-on UI:
 | 🟢 **Multiplayer, conflict-free** — concurrent edits never clobber | the CRDT (LWW-Map over HLC) |
 | ✍️ **Collaborative text** — two people type in one note, character by character | a **sequence CRDT (RGA)**, proven by a fault-injection sim |
 | ↶ **Undo / redo** — Ctrl+Z works *with* live collaboration, not against it | **inverse ops** re-authored with a fresh stamp (LWW always wins) |
+| 👀 **Live presence** — see peers' cursors **and the shape they're drawing** before they commit | ephemeral draft preview fanned out on the cursor channel |
 | 🔌 **Offline-resilient** — keep editing while disconnected, reconnect → auto-merge | optimistic local CRDT + op outbox + reconcile |
 | 🕐 **Time-travel** — scrub / replay the board's entire history | the append-only op-log (event sourcing) |
 | 📚 **Hourly board + archive** — fresh canvas each hour, past hours browsable read-only | op-log bucketed by room `base@<hour>` |
@@ -78,6 +79,13 @@ your color stays. Per-user stack, zero server involvement. See
 [`docs/adr/0003-inverse-op-undo.md`](docs/adr/0003-inverse-op-undo.md).
 
 ![Three shapes drawn, then Ctrl+Z erases the board and redo brings every shape back to the exact pixel](docs/demo/weave-undo.gif)
+
+**Live presence** is the same ephemeral channel as cursors. While you drag out a shape or ink a
+stroke, the *in-progress* draft is broadcast (throttled, never persisted) so collaborators watch it
+form — a translucent fill with a dashed outline in your colour — and disappears the instant you
+commit or cancel. So you don't just see *where* someone is, you see *what they're about to draw*.
+
+![Left: one user drags out a shape and sketches; right: the other watches the draft preview and cursor live](docs/demo/weave-presence.gif)
 
 ## Architecture
 

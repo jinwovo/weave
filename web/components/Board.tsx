@@ -386,6 +386,24 @@ export default function Board({ room }: { room: string }) {
           strokePath(ctx, pen, 0, 0, colorRef.current);
           ctx.restore();
         }
+        // peers' in-progress drafts — watch what someone else is drawing before they commit it
+        client.drafts.forEach((d, actor) => {
+          ctx.save();
+          if (d.tool === 'PEN' && d.pts && d.pts.length > 1) {
+            ctx.globalAlpha = 0.75;
+            strokePath(ctx, d.pts, 0, 0, d.color);
+          } else if (d.a && d.b && (d.tool === 'RECT' || d.tool === 'ELLIPSE' || d.tool === 'STICKY')) {
+            drawDraft(ctx, d.tool as DrawTool, d.a, d.b, d.color);
+            const r = rectOf(d.a, d.b, d.tool as DrawTool); // dashed outline in the author's colour
+            ctx.globalAlpha = 0.95;
+            ctx.strokeStyle = colorFor(actor);
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([5, 4]);
+            rr(ctx, r.x, r.y, r.w, r.h, 8);
+            ctx.stroke();
+          }
+          ctx.restore();
+        });
         client.cursors.forEach((c, id) => {
           c.x += (c.tx - c.x) * 0.25;
           c.y += (c.ty - c.y) * 0.25;
@@ -522,8 +540,10 @@ export default function Board({ room }: { room: string }) {
       const pen = penRef.current;
       const last = pen[pen.length - 1];
       if (!last || Math.hypot(p.x - last.x, p.y - last.y) >= 2) pen.push(p);
+      client?.draftPen(pen, colorRef.current);
     } else if (draftRef.current) {
       draftRef.current.b = p;
+      client?.draftShape(draftRef.current.type, draftRef.current.a, p, colorRef.current);
     } else if (dragRef.current) {
       const dr = dragRef.current;
       client?.drag(dr.id, { x: p.x - dr.dx, y: p.y - dr.dy });
@@ -541,6 +561,7 @@ export default function Board({ room }: { room: string }) {
     } else if (penRef.current && client) {
       const pen = penRef.current;
       penRef.current = null;
+      client.clearDraft();
       if (pen.length > 0) {
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         for (const pt of pen) {
@@ -557,6 +578,7 @@ export default function Board({ room }: { room: string }) {
     } else if (draftRef.current && client) {
       const d = draftRef.current;
       draftRef.current = null;
+      client.clearDraft();
       const { x, y, w, h } = rectOf(d.a, d.b, d.type);
       const id = client.create(d.type, { x, y }, { x: w, y: h }, colorRef.current, '', String(Date.now()));
       setSelected(id);
