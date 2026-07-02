@@ -2,7 +2,6 @@ package com.portfolio.weave.canvas;
 
 import com.portfolio.weave.crdt.CanvasDoc;
 import com.portfolio.weave.crdt.CanvasOp;
-import com.portfolio.weave.persistence.CanvasOpEntity;
 import com.portfolio.weave.persistence.CanvasOpRepository;
 import com.portfolio.weave.persistence.TextOpEntity;
 import com.portfolio.weave.persistence.TextOpRepository;
@@ -43,6 +42,7 @@ public class CanvasService {
 	private final ObjectMapper mapper;
 	private final RedisOpBus bus;
 	private final RoomRegistry registry;
+	private final SnapshotStore snapshotStore;
 	private final Counter opsIngested;
 	private final Counter textOpsIngested;
 	private final Timer ingestTimer;
@@ -50,13 +50,14 @@ public class CanvasService {
 	private final Map<String, AtomicReference<CanvasDoc>> docs = new ConcurrentHashMap<>();
 
 	public CanvasService(CanvasOpRepository repo, TextOpRepository textRepo, OpCodec codec, ObjectMapper mapper,
-	                     RedisOpBus bus, RoomRegistry registry, MeterRegistry meters) {
+	                     RedisOpBus bus, RoomRegistry registry, SnapshotStore snapshotStore, MeterRegistry meters) {
 		this.repo = repo;
 		this.textRepo = textRepo;
 		this.codec = codec;
 		this.mapper = mapper;
 		this.bus = bus;
 		this.registry = registry;
+		this.snapshotStore = snapshotStore;
 		this.opsIngested = Counter.builder("weave.ops.ingested").description("canvas ops persisted").register(meters);
 		this.textOpsIngested = Counter.builder("weave.text.ops.ingested").description("text ops persisted").register(meters);
 		this.ingestTimer = Timer.builder("weave.ingest").description("op persist latency").register(meters);
@@ -155,15 +156,9 @@ public class CanvasService {
 	}
 
 	private AtomicReference<CanvasDoc> roomDoc(String room) {
-		return docs.computeIfAbsent(room, r -> new AtomicReference<>(replay(r)));
-	}
-
-	private CanvasDoc replay(String room) {
-		CanvasDoc doc = new CanvasDoc();
-		for (CanvasOpEntity e : repo.findByRoomIdOrderByHlcLAscHlcCAscActorIdAsc(room)) {
-			doc = doc.apply(codec.fromEntity(e));
-		}
-		return doc;
+		// Cold start: persisted snapshot + only the op-log tail beyond its watermark. The fold
+		// of that pair is exactly the fold of the whole log (join-semilattice), just bounded.
+		return docs.computeIfAbsent(room, r -> new AtomicReference<>(snapshotStore.load(r).doc()));
 	}
 
 	private void apply(String room, CanvasOp op) {

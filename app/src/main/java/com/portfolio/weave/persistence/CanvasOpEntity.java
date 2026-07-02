@@ -53,6 +53,14 @@ public class CanvasOpEntity {
 	@Column(name = "created_at", nullable = false)
 	private Instant createdAt;
 
+	/**
+	 * Insertion-order watermark, assigned by the database ({@code bigserial}) — never written by
+	 * the application. Snapshots record the largest seq they folded; cold-start replay resumes
+	 * from there.
+	 */
+	@Column(name = "seq", insertable = false, updatable = false)
+	private Long seq;
+
 	public CanvasOpEntity() {
 		// no-arg constructor required by JPA and used by the codec to build rows
 	}
@@ -135,5 +143,9 @@ public class CanvasOpEntity {
 
 	public void setCreatedAt(Instant createdAt) {
 		this.createdAt = createdAt;
+	}
+
+	public Long getSeq() {
+		return seq;
 	}
 }

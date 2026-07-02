@@ -89,6 +89,39 @@
       "targets": [
         { "refId": "A", "expr": "sum(jvm_memory_used_bytes{area=\"heap\"})", "legendFormat": "heap used" }
       ]
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "snapshots written",
+      "description": "room snapshots materialised by the sweeper (canvas_snapshot upserts)",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "orange" } } },
+      "targets": [ { "refId": "A", "expr": "sum(weave_snapshot_writes_total)" } ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "cold-start tail (max ops)",
+      "description": "ops folded beyond the snapshot on a cold room load — bounded by the snapshot cadence, not the room lifetime",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "short", "color": { "mode": "fixed", "fixedColor": "yellow" } } },
+      "targets": [ { "refId": "A", "expr": "max(weave_replay_tail_ops_max)" } ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "snapshot refresh / cold-start replay",
+      "description": "time to fold+persist a room snapshot, and to rebuild a room on cold start (snapshot + tail)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s", "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 2 } } },
+      "targets": [
+        { "refId": "A", "expr": "weave_snapshot_refresh_seconds_max", "legendFormat": "snapshot refresh (max)" },
+        { "refId": "B", "expr": "weave_replay_seconds_max", "legendFormat": "cold-start replay (max)" }
+      ]
     }
   ]
 }

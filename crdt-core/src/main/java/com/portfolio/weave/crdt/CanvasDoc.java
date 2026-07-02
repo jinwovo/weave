@@ -29,6 +29,15 @@ public final class CanvasDoc {
 		this.shapes = shapes;
 	}
 
+	/**
+	 * Reconstitute a document from previously-materialised shape states (e.g. a persisted
+	 * snapshot). Because the document is just a lattice element, a rebuilt prefix fold plus
+	 * the remaining ops merges to exactly the same state as replaying everything.
+	 */
+	public static CanvasDoc of(Map<UUID, ShapeState> shapes) {
+		return new CanvasDoc(Map.copyOf(shapes));
+	}
+
 	/** An unmodifiable view of every shape this replica knows about (including tombstoned). */
 	public Map<UUID, ShapeState> shapes() {
 		return Collections.unmodifiableMap(shapes);

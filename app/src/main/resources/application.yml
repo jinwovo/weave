@@ -19,6 +19,16 @@ spring:
       host: localhost
       port: 6383
 
+# Snapshot-accelerated replay: the sweeper folds any room whose un-snapshotted op-log tail
+# passed `threshold` into canvas_snapshot, so a cold start replays O(tail) instead of O(log).
+# `grace` keeps the watermark behind rows young enough that their transaction might still be
+# in flight (see SnapshotStore).
+weave:
+  snapshot:
+    threshold: 500
+    grace: PT10S
+    sweep-delay: PT30S
+
 management:
   endpoints:
     web:

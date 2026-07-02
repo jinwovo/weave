@@ -118,6 +118,32 @@ class CanvasDocPropertyTest {
 		}
 	}
 
+	/**
+	 * The snapshot contract: folding any prefix of the op-log into a materialised document,
+	 * then applying the remaining ops — shuffled, and with part of the already-folded prefix
+	 * re-delivered on top — rebuilds the exact full document. This is what makes persisted
+	 * snapshots with a conservative watermark <em>exact</em>, not approximate: overlap is
+	 * absorbed by idempotency, order by commutativity.
+	 */
+	@Property(tries = 200)
+	void aSnapshotOfAnyPrefixPlusTheTailRebuildsTheExactDocument(@ForAll("opLogs") List<CanvasOp> ops) {
+		CanvasDoc full = new CanvasDoc().applyAll(ops);
+		Random rnd = new Random(ops.size() * 271L + 13);
+		for (int trial = 0; trial < 8; trial++) {
+			int cut = rnd.nextInt(ops.size() + 1);
+			// the persisted snapshot: shapes round-tripped through the public factory
+			CanvasDoc snapshot = CanvasDoc.of(new CanvasDoc().applyAll(ops.subList(0, cut)).shapes());
+			List<CanvasOp> tail = new ArrayList<>(ops.subList(cut, ops.size()));
+			for (CanvasOp folded : ops.subList(0, cut)) {
+				if (rnd.nextBoolean()) {
+					tail.add(folded); // grace-window overlap: refolding already-snapshotted ops
+				}
+			}
+			Collections.shuffle(tail, rnd);
+			assertThat(snapshot.applyAll(tail)).isEqualTo(full);
+		}
+	}
+
 	@Property(tries = 100)
 	void documentMergeIsCommutativeAssociativeIdempotent(@ForAll("opLogs") List<CanvasOp> ops) {
 		int n = ops.size();
