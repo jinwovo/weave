@@ -282,7 +282,18 @@ function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
 
 type Travel = { ops: WOp[]; index: number; playing: boolean };
 
+/**
+ * The board is client-only: the actor identity is random per tab, so server-rendered text
+ * (name, avatar) can never match hydration. Render nothing until mounted instead of letting
+ * React hydrate a mismatched tree and regenerate it (the dev overlay flagged this as an issue).
+ */
 export default function Board({ room }: { room: string }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  return mounted ? <BoardImpl room={room} /> : null;
+}
+
+function BoardImpl({ room }: { room: string }) {
   const [actor] = useState(genActor);
   const [epoch, setEpoch] = useState(currentEpoch);
   useEffect(() => {
@@ -301,6 +312,18 @@ export default function Board({ room }: { room: string }) {
   const [offline, setOffline] = useState(false);
   const [archive, setArchive] = useState<{ epoch: number; count: number }[] | null>(null);
   const [copied, setCopied] = useState(false);
+
+  // "Sync server unreachable" is only shown once the connection has stayed down for a beat —
+  // the reconnect loop flips connecting/closed rapidly, and the first connect shouldn't flash it.
+  const [unreachable, setUnreachable] = useState(false);
+  useEffect(() => {
+    if (status === 'open') {
+      setUnreachable(false);
+      return;
+    }
+    const id = window.setTimeout(() => setUnreachable(true), 2500);
+    return () => clearTimeout(id);
+  }, [status]);
 
   const toolRef = useRef(tool); toolRef.current = tool;
   const colorRef = useRef(color); colorRef.current = color;
@@ -827,6 +850,12 @@ export default function Board({ room }: { room: string }) {
       </div>
 
       {offline && <div className="offline-banner">⚡ OFFLINE — your edits are local · go online to merge them back</div>}
+      {!offline && unreachable && (
+        <div className="net-banner">
+          <div>⚠ sync server unreachable — drawing works locally, but live cursors, history &amp; archive need it</div>
+          <div className="hint">start it with <code>scripts/dev-up.ps1</code> · retrying…</div>
+        </div>
+      )}
       {copied && <div className="toast">link copied ✓</div>}
 
       {!travel && (

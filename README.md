@@ -122,6 +122,16 @@ echo is the *single* broadcast path, so every instance — the origin included �
 sockets. A late joiner gets a snapshot; **time-travel** and the **hourly archive** read that same op-log
 over HTTP. The server stores and fans out — it never decides the state; the CRDT does.
 
+**Cold-start recovery is bounded, not lifetime-long.** A background sweeper materialises each busy
+room's fold into a `canvas_snapshot` row (every register with its HLC timestamp, tombstones included —
+lossless at the CRDT level), watermarked by an insertion-order `seq`. Rebuilding a room then folds
+*snapshot + tail* instead of the whole log — **O(tail)**, tail ≤ threshold + one sweep window. It's
+exact, not approximate: the document fold is a join-semilattice, so folding any subset then the rest —
+any order, any overlap — rebuilds the identical document (property-tested). The watermark only advances
+past a grace window so a seq handed out before its transaction commits can never be skipped, and
+`/history` still reads the full log — snapshots bound recovery, they don't rewrite history.
+([ADR-0004](docs/adr/0004-snapshot-accelerated-replay.md))
+
 ### Offline → reconnect → reconverge
 
 The op-log + CRDT make a dropped connection a non-event: keep editing, reconnect, and the diverged
@@ -161,19 +171,24 @@ The convergence guarantee is enforced by **property-based tests** (`jqwik`), not
   converge to one string (character-level, not LWW);
 - **deterministic fault-injection simulation** — a Jepsen-lite / DST harness: 3–4 replicas under an
   adversarial network (delay, reorder, drop-and-redeliver, duplicate) converge across **400 seeds**,
-  every run reproducible from its seed.
+  every run reproducible from its seed;
+- **the snapshot contract** — folding any prefix into a materialised snapshot, then the tail —
+  shuffled, with part of the prefix re-delivered on top — rebuilds the exact full document.
 
 ```bash
-./gradlew :crdt-core:test     # 18 tests
+./gradlew :crdt-core:test     # 19 tests
 ```
 
 The **sync server** is proven end-to-end against real Postgres + Redis (Testcontainers): ops
 authored by one WebSocket client fan out to another, land in the durable op-log **exactly once** (a
 duplicate is absorbed by the `(room, actor, hlc)` constraint), and a late-joining client converges
 to the identical board **from the snapshot alone** — purely by replaying the op-log through the CRDT.
+`SnapshotIntegrationTest` additionally proves the sweeper snapshots a busy room, a cold start folds
+**only the tail** beyond the watermark, and the bounded rebuild — including a tombstone, a
+post-snapshot resurrection, and an idempotent double-refresh — equals the full-log fold exactly.
 
 ```bash
-./gradlew :app:test           # 7 tests (Testcontainers PG + Redis)
+./gradlew :app:test           # 12 tests (Testcontainers PG + Redis)
 ```
 
 **Multi-instance convergence** is proven by `MultiInstanceConvergenceTest`, which boots **two app
@@ -197,7 +212,8 @@ k6 run load/convergence.js    # against two instances on :8103 and :8104
   edits that flush + reconcile on reconnect. Plus **time-travel** replay and the **hourly archive**.
 - **observability** — Micrometer metrics on `/actuator/prometheus`, scraped by Prometheus into a
   provisioned **Grafana** dashboard: active sessions/rooms, op ingest rate + persist latency
-  (p50/p95/p99 via histogram buckets), HTTP p95 per route, JVM heap.
+  (p50/p95/p99 via histogram buckets), HTTP p95 per route, JVM heap, and the snapshot row —
+  snapshots written, cold-start tail size, refresh/replay latency.
 
 ![Grafana dashboard under k6 load — 24 live sessions, op ingest rate and persist latency](docs/demo/weave-grafana.png)
 
@@ -216,8 +232,18 @@ front **3009**, Prometheus **9099**, Grafana **3011**. Container prefix `weave-`
 | **P5** | Playwright two-client demo GIF + product polish (PNG export, copy-link) | ✅ done |
 | **P6** | Sequence CRDT (RGA) collaborative text + deterministic fault-injection sim · Prometheus + Grafana observability | ✅ done |
 | **P7** | Undo / redo via **inverse ops** — per-user, concurrency-safe, zero server change | ✅ done |
+| **P8** | **Snapshot-accelerated replay** — lossless CRDT snapshots + seq watermark + grace window; cold start folds O(tail), proven exact by property test | ✅ done |
 
 ## Quickstart
+
+On Windows, one command brings up the whole stack (Docker Desktop → containers → app → web) and
+opens the board — it skips whatever is already running:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/dev-up.ps1
+```
+
+Or piece by piece:
 
 ```bash
 git clone https://github.com/jinwovo/weave && cd weave
@@ -231,3 +257,6 @@ docker compose up -d          # weave-postgres (5437) + weave-redis (6383)
 cd web && npm install && npm run dev    # canvas client on http://localhost:3009
 # open two tabs at http://localhost:3009/?room=demo — draw, paste an image, go offline, hit 🕐 / 📚
 ```
+
+The client tells you when the sync server isn't reachable (drawing still works locally — live
+cursors, history and the archive are what need it).
